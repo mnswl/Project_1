@@ -7,8 +7,14 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <h1>Gig Worker Finder Dashboard</h1>
-  <button id="logoutBtn">Logout</button>
+  <header>
+    <h1>Gig Worker Finder Dashboard</h1>
+    <div class="header-controls">
+      <button id="chat-toggle-btn" class="chat-btn">💬 Messages</button>
+      <button id="theme-toggle" class="theme-btn">🌙</button>
+      <button id="logoutBtn">Logout</button>
+    </div>
+  </header>
 
   <div id="employerView" style="display: none;">
     <h2>Post a Job</h2>
@@ -31,6 +37,36 @@
     <ul id="jobList"></ul>
   </div>
 
+  <!-- Chat Modal -->
+  <div id="chat-modal" class="modal" style="display:none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Messages</h3>
+        <span class="close-modal" id="close-chat">&times;</span>
+      </div>
+      <div class="chat-container">
+        <div class="chat-sidebar">
+          <h4>Conversations</h4>
+          <div id="conversations-list"></div>
+        </div>
+        <div class="chat-main">
+          <div id="chat-header" style="display:none;">
+            <h4 id="chat-with-name">Chat with...</h4>
+          </div>
+          <div id="chat-messages"></div>
+          <div id="chat-input-container" style="display:none;">
+            <input type="text" id="chat-input" placeholder="Type a message..." />
+            <button id="send-message-btn">Send</button>
+          </div>
+          <div id="no-chat-selected">
+            <p>Select a conversation to start chatting</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
   <script src="main.js"></script>
 </body>
 </html>

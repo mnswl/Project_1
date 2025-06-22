@@ -1,0 +1,30 @@
+gig-worker-finder/
+│
+├── server/                       # ✅ Backend
+│   ├── controllers/              # Logic for routes
+│   │   ├── authController.js
+│   │
+│   ├── middleware/
+│   │   └── authMiddleware.js     # Token verification
+│   │
+│   ├── models/                   # Mongoose schemas
+│   │   ├── User.js
+│   │   └── Job.js
+│   │
+│   ├── routes/                   # API route handlers
+│   │   ├── authRoutes.js         # /api/auth/*
+│   │   └── jobRoutes.js          # /api/jobs/*
+│   │   └── userRoutes.js 
+│   │
+│   ├── .env                      # MongoDB URI, JWT secret
+│   ├── app.js                    # Main Express setup
+│   ├── package.json              # Backend dependencies & scripts
+│   └── config.js                 # MongoDB connection logic
+│
+└── gig-worker-frontend/         # ✅ Frontend (non-React)
+    ├── index.html               # Login/Signup interface
+    ├── dashboard.html           # Job listing, posting, apply
+    ├── app.js                   # Auth logic (login/register)
+    ├── main.js                  # Dashboard logic (post/apply jobs)
+    ├── style.css                # Styling
+    └── assets/ (optional)       # Any icons/images you might add
