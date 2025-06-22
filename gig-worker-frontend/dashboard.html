@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Dashboard - Gig Worker Finder</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <h1>Gig Worker Finder Dashboard</h1>
+  <button id="logoutBtn">Logout</button>
+
+  <div id="employerView" style="display: none;">
+    <h2>Post a Job</h2>
+    <form id="jobForm">
+      <input type="text" id="title" placeholder="Job Title" required />
+      <input type="text" id="description" placeholder="Job Description" required />
+      <input type="text" id="location" placeholder="Location" required />
+      <input type="number" id="payRate" placeholder="Pay Rate" required />
+      <button type="submit">Post Job</button>
+    </form>
+
+    <h2>My Posted Jobs</h2>
+    <ul id="postedJobs"></ul>
+  </div>
+
+  <div id="workerView" style="display: none;">
+    <h2>Available Jobs</h2>
+    <input type="text" id="filterLocation" placeholder="Filter by location" />
+    <button id="filterBtn">Search</button>
+    <ul id="jobList"></ul>
+  </div>
+
+  <script src="main.js"></script>
+</body>
+</html>
