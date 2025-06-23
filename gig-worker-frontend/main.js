@@ -8,6 +8,15 @@ let socket = null;
 let currentChatUser = null;
 let conversations = [];
 
+function getStoredAuth() {
+  const token = localStorage.getItem('token');
+  const role = localStorage.getItem('role');
+  const name = localStorage.getItem('name');
+  const userId = localStorage.getItem('userId');
+  
+  return { token, role, name, userId };
+}
+
 // Initialize Socket.IO connection
 function initializeSocket() {
   if (token) {
@@ -25,16 +34,14 @@ function initializeSocket() {
       handleNewMessage(message);
     });
 
-    socket.on('message_sent', (message) => {
-      if (currentChatUser && 
-          (message.receiver._id === currentChatUser._id || message.sender._id === currentChatUser._id)) {
-        displayMessage(message);
-      }
-      updateConversationsList();
-    });
 
     socket.on('user_typing', (data) => {
       showTypingIndicator(data);
+    });
+
+    // Handle connection errors
+    socket.on('connect_error', (error) => {
+      console.error('❌ Socket connection error:', error.message);
     });
 
     socket.on('disconnect', () => {
@@ -246,33 +253,16 @@ function displayMessage(message) {
 }
 
 // Send a message
-async function sendMessage() {
+function sendMessage() {
   const chatInput = document.getElementById('chat-input');
   const content = chatInput.value.trim();
   
-  if (!content || !currentChatUser) return;
-
-  try {
-    const response = await fetch(`${apiUrl}/chat/send`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({
-        receiverId: currentChatUser._id,
-        content: content
-      })
+  if (content && currentChatUser && socket) {
+    socket.emit('send_message', {
+      receiverId: currentChatUser._id,
+      content: content
     });
-
-    if (response.ok) {
-      chatInput.value = '';
-      // Message will be displayed via socket event
-    } else {
-      console.error('Failed to send message');
-    }
-  } catch (error) {
-    console.error('Error sending message:', error);
+    chatInput.value = '';
   }
 }
 
@@ -288,8 +278,29 @@ function handleNewMessage(message) {
   updateConversationsList();
 
   // Display message if current chat is open
-  if (currentChatUser && message.sender._id === currentChatUser._id) {
+  if (currentChatUser && (message.sender._id === currentChatUser._id || message.receiver._id === currentChatUser._id)) {
     displayMessage(message);
+  }
+}
+
+// Show typing indicator
+function showTypingIndicator(data) {
+  if (!currentChatUser || data.userId !== currentChatUser._id) return;
+  
+  const chatMessages = document.getElementById('chat-messages');
+  let typingIndicator = document.getElementById('typing-indicator');
+  
+  if (data.isTyping) {
+    if (!typingIndicator) {
+      typingIndicator = document.createElement('div');
+      typingIndicator.id = 'typing-indicator';
+      typingIndicator.className = 'typing-indicator';
+      typingIndicator.innerHTML = `<span>${currentChatUser.name} is typing...</span>`;
+      chatMessages.appendChild(typingIndicator);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+  } else if (typingIndicator) {
+    typingIndicator.remove();
   }
 }
 
@@ -456,7 +467,19 @@ async function loadJobs() {
     const jobs = data.jobs || data;
     
     if (jobs && jobs.length > 0) {
+      // Get current user ID from token
+      const userId = getCurrentUserId();
+      
       jobs.forEach((job) => {
+        // Check if user has already applied to this job
+        const hasApplied = job.applicants && job.applicants.some(
+          applicantId => applicantId === userId || applicantId._id === userId
+        );
+        
+        const applyButton = hasApplied 
+          ? `<button disabled style="background-color: #28a745; color: white; margin-right: 10px;">Applied!</button>` 
+          : `<button onclick="applyToJob('${job._id}')" style="margin-right: 10px;">Apply</button>`;
+        
         const li = document.createElement("li");
         li.innerHTML = `
           <strong>${job.title}</strong> — ${job.location} — Rs. ${job.payRate}
@@ -464,7 +487,7 @@ async function loadJobs() {
           <small>Posted by: ${job.employer?.name || 'Unknown'}</small>
           <br/>
           <div style="margin-top: 10px;">
-            <button onclick="applyToJob('${job._id}')" style="margin-right: 10px;">Apply</button>
+            ${applyButton}
             <button onclick="startConversationWithEmployer('${job.employer?._id}', '${job._id}', '${job.title}')" class="chat-btn">💬 Message Employer</button>
           </div>
         `;
@@ -494,12 +517,23 @@ async function loadMyJobs() {
     const jobs = data.jobs || data;
     
     if (jobs && jobs.length > 0) {
+      const userId = getCurrentUserId();
       jobs.forEach((job) => {
         const li = document.createElement("li");
+        let buttons = `<button onclick="viewApplicants('${job._id}', '${job.title}')">View Applicants (${job.applicants?.length || 0})</button>`;
+        if (job.employer && job.employer._id === userId) {
+          buttons += `
+            <button onclick="editJob('${job._id}')" class="edit-btn">Edit</button>
+            <button onclick="deleteJob('${job._id}')" class="delete-btn">Delete</button>
+          `;
+        }
         li.innerHTML = `
           <strong>${job.title}</strong> — ${job.location} — Rs. ${job.payRate}
           <br/>
           <small>Applicants: ${job.applicants?.length || 0}</small>
+          <div style="margin-top: 10px;">
+            ${buttons}
+          </div>
         `;
         postedJobs.appendChild(li);
       });
@@ -548,3 +582,106 @@ async function applyToJob(jobId) {
 // Make functions globally available
 window.applyToJob = applyToJob;
 window.startConversationWithEmployer = startConversationWithEmployer;
+
+function editJob(jobId) {
+  const newTitle = prompt("Enter new title:");
+  if (newTitle) {
+    updateJob(jobId, { title: newTitle });
+  }
+}
+
+async function deleteJob(jobId) {
+  if (confirm("Are you sure you want to delete this job?")) {
+    try {
+      const res = await fetch(`${apiUrl}/jobs/${jobId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (res.ok) {
+        loadMyJobs();
+      } else {
+        alert('Failed to delete job.');
+      }
+    } catch (err) {
+      console.error('Error deleting job:', err);
+    }
+  }
+}
+
+async function updateJob(jobId, data) {
+  try {
+    const res = await fetch(`${apiUrl}/jobs/${jobId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(data)
+    });
+    if (res.ok) {
+      loadMyJobs();
+    } else {
+      alert('Failed to update job.');
+    }
+  } catch (err) {
+    console.error('Error updating job:', err);
+  }
+}
+
+window.editJob = editJob;
+window.deleteJob = deleteJob;
+
+async function viewApplicants(jobId, jobTitle) {
+  const { token } = getStoredAuth();
+  
+  try {
+    const response = await fetch(`${apiUrl}/jobs/${jobId}/applicants`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    
+    const data = await response.json();
+    
+    if (response.ok) {
+      const applicantsJobTitle = document.getElementById('applicants-job-title');
+      const applicantsList = document.getElementById('applicants-list');
+      const applicantsSection = document.getElementById('applicants-section');
+
+      applicantsJobTitle.textContent = jobTitle;
+      applicantsList.innerHTML = '';
+      
+      if (data.length > 0) {
+        data.forEach(applicant => {
+          const li = document.createElement('li');
+          li.innerHTML = `
+            <strong>${applicant.name}</strong><br>
+            <em>Email:</em> ${applicant.email}<br>
+            <em>Role:</em> ${applicant.role}
+          `;
+          applicantsList.appendChild(li);
+        });
+      } else {
+        applicantsList.innerHTML = '<li>No applicants yet</li>';
+      }
+      
+      applicantsSection.style.display = 'block';
+    } else {
+      alert(data.message || 'Failed to load applicants');
+    }
+  } catch (error) {
+    console.error('View applicants error:', error);
+    alert('Network error. Please try again.');
+  }
+}
+
+window.viewApplicants = viewApplicants;
+
+document.addEventListener('DOMContentLoaded', () => {
+    const closeApplicantsBtn = document.getElementById('close-applicants-btn');
+    if(closeApplicantsBtn) {
+        closeApplicantsBtn.addEventListener('click', () => {
+            document.getElementById('applicants-section').style.display = 'none';
+        });
+    }
+});

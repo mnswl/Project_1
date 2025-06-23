@@ -119,46 +119,6 @@ router.get('/messages/:otherUserId', authMiddleware, async (req, res) => {
   }
 });
 
-// Send a message
-router.post('/send', authMiddleware, async (req, res) => {
-  try {
-    const { receiverId, content, jobId } = req.body;
-    const senderId = req.user.id;
-
-    // Validate receiver exists
-    const receiver = await User.findById(receiverId);
-    if (!receiver) {
-      return res.status(404).json({ message: 'Receiver not found' });
-    }
-
-    // Create new message
-    const message = new Message({
-      sender: senderId,
-      receiver: receiverId,
-      content,
-      jobId: jobId || null,
-      isRead: false
-    });
-
-    await message.save();
-
-    // Populate sender and receiver info
-    await message.populate('sender', 'name email role');
-    await message.populate('receiver', 'name email role');
-
-    // Emit to both users via Socket.IO (if connected)
-    const io = req.app.get('io');
-    if (io) {
-      io.to(`user_${receiverId}`).emit('new_message', message);
-      io.to(`user_${senderId}`).emit('message_sent', message);
-    }
-
-    res.status(201).json(message);
-  } catch (error) {
-    console.error('Error sending message:', error);
-    res.status(500).json({ message: 'Server error' });
-  }
-});
 
 // Start a conversation (typically when applying for a job)
 router.post('/start-conversation', authMiddleware, async (req, res) => {

@@ -401,3 +401,68 @@ li {
   border-radius: 5px;
   margin: 10px 0;
 }
+
+/* Typing Indicator */
+.typing-indicator {
+  padding: 5px 10px;
+  margin: 10px 0;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--text-color);
+  opacity: 0.7;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 0.5; }
+  50% { opacity: 0.8; }
+  100% { opacity: 0.5; }
+}
+
+/* Applicants Modal Styles */
+.applicants-container {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+#applicants-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+#applicants-list li {
+  background-color: var(--sidebar-bg);
+  margin: 10px 0;
+  padding: 15px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  transition: background-color 0.3s ease;
+}
+
+#applicants-list li:hover {
+  background-color: var(--message-bg);
+}
+
+#applicants-list li strong {
+  color: var(--button-bg);
+  font-size: 16px;
+  display: block;
+  margin-bottom: 8px;
+}
+
+#applicants-list li em {
+  color: var(--text-color);
+  font-style: normal;
+  font-weight: 600;
+  margin-right: 5px;
+}
+
+/* No applicants message */
+#applicants-list li:only-child {
+  text-align: center;
+  color: var(--text-color);
+  opacity: 0.7;
+  font-style: italic;
+}

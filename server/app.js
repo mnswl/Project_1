@@ -14,6 +14,8 @@ import authRoutes from './routes/authRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import jobRoutes from './routes/jobRoutes.js';
 import chatRoutes from './routes/chatRoutes.js';
+import Message from './models/Message.js';
+import User from './models/User.js';
 
 const app = express();
 const server = http.createServer(app);
@@ -89,6 +91,36 @@ io.on('connection', (socket) => {
       userId: socket.userId,
       isTyping: data.isTyping
     });
+  });
+  
+  // Handle sending messages
+  socket.on('send_message', async (data) => {
+    try {
+      const { receiverId, content } = data;
+      const senderId = socket.userId;
+
+      const receiver = await User.findById(receiverId);
+      if (!receiver) {
+        return socket.emit('send_message_error', { message: 'Receiver not found' });
+      }
+
+      const message = new Message({
+        sender: senderId,
+        receiver: receiverId,
+        content,
+      });
+      await message.save();
+
+      await message.populate('sender', 'name email role');
+      await message.populate('receiver', 'name email role');
+
+      const roomName = [senderId, receiverId].sort().join('_');
+      io.to(roomName).emit('new_message', message);
+
+    } catch (error) {
+      console.error('Socket send_message error:', error);
+      socket.emit('send_message_error', { message: 'Error sending message' });
+    }
   });
   
   // Handle user disconnect

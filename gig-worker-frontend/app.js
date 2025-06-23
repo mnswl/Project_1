@@ -24,12 +24,13 @@ function getStoredAuth() {
   const token = localStorage.getItem('token');
   const role = localStorage.getItem('role');
   const name = localStorage.getItem('name');
+  const userId = localStorage.getItem('userId');
   
   console.log('🔍 Debug - Stored token:', token ? 'exists' : 'missing');
   console.log('🔍 Debug - Stored role:', role);
   console.log('🔍 Debug - Stored name:', name);
   
-  return { token, role, name };
+  return { token, role, name, userId };
 }
 
 function setStoredAuth(userData) {
@@ -57,9 +58,8 @@ function checkAuth() {
   const { token, role, name } = getStoredAuth();
   
   if (token && role && name) {
-    console.log('✅ User authenticated, showing dashboard');
-    showUserSection(role, name);
-    loadJobs();
+    console.log('✅ User authenticated, redirecting to dashboard');
+    window.location.href = 'dashboard.html';
   } else {
     console.log('❌ User not authenticated, showing login');
     showAuthSection();
@@ -73,19 +73,7 @@ function showAuthSection() {
 }
 
 function showUserSection(role, name) {
-  authSection.style.display = 'none';
-  userSection.style.display = 'block';
-  userName.textContent = name;
-  userRole.textContent = role;
-  
-  // Fix 1: Role-based view management
-  if (role === 'employer') {
-    console.log('✅ Showing employer features');
-    postJobSection.style.display = 'block';
-  } else {
-    console.log('✅ Showing worker features');
-    postJobSection.style.display = 'none';
-  }
+  window.location.href = 'dashboard.html';
 }
 
 // Register functionality
@@ -245,14 +233,25 @@ async function loadJobs() {
 
 // Create job action buttons based on user role
 function createJobActions(job) {
-  const { role, token } = getStoredAuth();
+  const { role, token, userId } = getStoredAuth();
   
   if (!token) return '';
   
   if (role === 'worker') {
+    const hasApplied = job.applicants && job.applicants.some(applicantId => applicantId === userId);
+    if (hasApplied) {
+      return `<button class="apply-btn" disabled>Applied</button>`;
+    }
     return `<button onclick="applyToJob('${job._id}')" class="apply-btn">Apply</button>`;
   } else if (role === 'employer') {
-    return `<button onclick="viewApplicants('${job._id}', '${job.title}')">View Applicants (${job.applicants?.length || 0})</button>`;
+    let buttons = `<button onclick="viewApplicants('${job._id}', '${job.title}')">View Applicants (${job.applicants?.length || 0})</button>`;
+    if (job.employer && job.employer._id === userId) {
+      buttons += `
+        <button onclick="editJob('${job._id}')" class="edit-btn">Edit</button>
+        <button onclick="deleteJob('${job._id}')" class="delete-btn">Delete</button>
+      `;
+    }
+    return buttons;
   }
   
   return '';
@@ -355,8 +354,88 @@ closeApplicantsBtn.addEventListener('click', () => {
   applicantsSection.style.display = 'none';
 });
 
+// Edit job
+function editJob(jobId) {
+  const newTitle = prompt("Enter new title:");
+  if (newTitle) {
+    updateJob(jobId, { title: newTitle });
+  }
+}
+
+// Delete job
+async function deleteJob(jobId) {
+  if (confirm("Are you sure you want to delete this job?")) {
+    const { token } = getStoredAuth();
+    try {
+      const response = await fetch(`${API_BASE}/jobs/${jobId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (response.ok) {
+        loadJobs();
+      } else {
+        alert('Failed to delete job.');
+      }
+    } catch (error) {
+      console.error('Delete job error:', error);
+    }
+  }
+}
+
+async function updateJob(jobId, data) {
+  const { token } = getStoredAuth();
+  try {
+    const response = await fetch(`${API_BASE}/jobs/${jobId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(data)
+    });
+    if (response.ok) {
+      loadJobs();
+    } else {
+      alert('Failed to update job.');
+    }
+  } catch (error) {
+    console.error('Update job error:', error);
+  }
+}
+
+// Theme Toggle Functionality
+function initializeTheme() {
+  const themeToggle = document.getElementById('theme-toggle');
+  if (!themeToggle) return;
+  
+  const savedTheme = localStorage.getItem('theme') || 'light';
+  
+  // Apply saved theme
+  document.documentElement.setAttribute('data-theme', savedTheme);
+  updateThemeButton(savedTheme);
+  
+  themeToggle.addEventListener('click', () => {
+    const currentTheme = document.documentElement.getAttribute('data-theme');
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    
+    document.documentElement.setAttribute('data-theme', newTheme);
+    localStorage.setItem('theme', newTheme);
+    updateThemeButton(newTheme);
+  });
+}
+
+function updateThemeButton(theme) {
+  const themeToggle = document.getElementById('theme-toggle');
+  if (themeToggle) {
+    themeToggle.textContent = theme === 'dark' ? '☀️' : '🌙';
+  }
+}
+
 // Fix 1: Initialize app on page load
 document.addEventListener('DOMContentLoaded', () => {
   console.log('🚀 App initialized');
+  initializeTheme();
   checkAuth();
 });

@@ -41,7 +41,9 @@ router.post('/', protect, async (req, res) => {
 // Get all jobs - public access
 router.get('/', async (req, res) => {
   try {
-    const jobs = await Job.find().populate('employer', 'name email');
+    const { location } = req.query;
+    const filter = location ? { location: new RegExp(location, 'i') } : {};
+    const jobs = await Job.find(filter).populate('employer', 'name email');
     res.json({ jobs });
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
@@ -100,6 +102,59 @@ router.get('/:id/applicants', protect, async (req, res) => {
 
     res.json(job.applicants);
   } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// @desc    Update a job
+// @route   PUT /api/jobs/:id
+// @access  Private (Employer only)
+router.put('/:id', protect, async (req, res) => {
+  try {
+    const job = await Job.findById(req.params.id);
+
+    if (!job) {
+      return res.status(404).json({ message: 'Job not found' });
+    }
+
+    // Check if the user is the employer who posted the job
+    if (job.employer.toString() !== req.user._id.toString()) {
+      return res.status(401).json({ message: 'User not authorized' });
+    }
+
+    const { title, description, location, payRate } = req.body;
+
+    job.title = title || job.title;
+    job.description = description || job.description;
+    job.location = location || job.location;
+    job.payRate = payRate || job.payRate;
+
+    const updatedJob = await job.save();
+    res.json(updatedJob);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// @desc    Delete a job
+// @route   DELETE /api/jobs/:id
+// @access  Private (Employer only)
+router.delete('/:id', protect, async (req, res) => {
+  try {
+    const job = await Job.findById(req.params.id);
+
+    if (!job) {
+      return res.status(404).json({ message: 'Job not found' });
+    }
+
+    // Check if the user is the employer who posted the job
+    if (job.employer.toString() !== req.user._id.toString()) {
+      return res.status(401).json({ message: 'User not authorized' });
+    }
+
+    await job.deleteOne();
+    res.json({ message: 'Job removed' });
+  } catch (error) {
     res.status(500).json({ message: 'Server error' });
   }
 });
