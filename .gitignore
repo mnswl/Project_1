@@ -4,7 +4,7 @@
 .env.production
 node_modules/
 node_modules
+Tokens.txt
 dist/
 build/
 *.log
-Tokens.txt
