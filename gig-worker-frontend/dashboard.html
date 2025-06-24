@@ -17,24 +17,51 @@
   </header>
 
   <div id="employerView" style="display: none;">
-    <h2>Post a Job</h2>
+    <h2>Post a New Job</h2>
     <form id="jobForm">
-      <input type="text" id="title" placeholder="Job Title" required />
-      <input type="text" id="description" placeholder="Job Description" required />
-      <input type="text" id="location" placeholder="Location" required />
-      <input type="number" id="payRate" placeholder="Pay Rate" required />
-      <select id="jobType" required>
-        <option value="">Select Job Type</option>
-        <option value="full-time">Full-time</option>
-        <option value="part-time">Part-time</option>
-        <option value="contract">Contract</option>
-      </select>
+      <div class="form-group">
+        <label for="title">Job Title</label>
+        <input type="text" id="title" required placeholder="Enter job title" />
+      </div>
+      <div class="form-group">
+        <label for="description">Description</label>
+        <textarea id="description" required placeholder="Enter job description"></textarea>
+      </div>
+      <div class="form-group">
+        <label for="location">Location</label>
+        <input type="text" id="location" required placeholder="Enter job location" />
+      </div>
+      <div class="form-group">
+        <label for="payRate">Pay Rate (per hour)</label>
+        <input type="number" id="payRate" required placeholder="Enter pay rate" />
+      </div>
+      <div class="form-group">
+        <label for="jobType">Job Type</label>
+        <select id="jobType" required>
+          <option value="">Select job type</option>
+          <option value="full-time">Full-time</option>
+          <option value="part-time">Part-time</option>
+          <option value="contract">Contract</option>
+        </select>
+      </div>
       <button type="submit">Post Job</button>
     </form>
 
+    <h2>All Jobs</h2>
+    <input type="text" id="employerFilterLocation" placeholder="Filter by location" />
+    <input type="number" id="employerFilterMinPay" placeholder="Min Pay" />
+    <input type="number" id="employerFilterMaxPay" placeholder="Max Pay" />
+    <select id="employerFilterJobType">
+      <option value="">All Types</option>
+      <option value="full-time">Full-time</option>
+      <option value="part-time">Part-time</option>
+      <option value="contract">Contract</option>
+    </select>
+    <input type="text" id="employerFilterKeyword" placeholder="Keyword search" />
+    <button id="employerFilterBtn">Search</button>
+    <ul id="employerJobList"></ul>
     <h2>My Posted Jobs</h2>
     <ul id="postedJobs"></ul>
-
     <h3>Bookmarked Applicants</h3>
     <ul id="bookmarkedApplicantsList"></ul>
   </div>
@@ -84,6 +111,17 @@
           </div>
           <div id="chat-messages"></div>
           <div id="chat-input-container" style="display:none;">
+            <div class="message-template-container">
+              <select id="message-template" onchange="insertTemplate()">
+                <option value="">Select a template...</option>
+                <option value="intro">Introduction</option>
+                <option value="follow-up">Follow Up</option>
+                <option value="schedule">Schedule Meeting</option>
+                <option value="accept">Accept Application</option>
+                <option value="reject">Reject Application</option>
+                <option value="custom">Custom Message</option>
+              </select>
+            </div>
             <input type="text" id="chat-input" placeholder="Type a message..." />
             <button id="send-message-btn">Send</button>
           </div>
@@ -109,6 +147,7 @@
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+  <script>alert('main.js loaded');</script>
   <script src="main.js"></script>
 </body>
 </html>

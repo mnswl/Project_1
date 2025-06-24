@@ -62,6 +62,25 @@ router.get('/', async (req, res) => {
   }
 });
 
+// Get jobs posted by the current employer
+router.get('/mine', protect, async (req, res) => {
+  try {
+    let filter = {};
+    if (req.user.role === 'employer') {
+      filter = { employer: req.user._id };
+    } else if (req.user.role === 'admin') {
+      // Admin can see all jobs
+      filter = {};
+    } else {
+      return res.status(403).json({ message: 'Only employers or admins can view their posted jobs' });
+    }
+    const jobs = await Job.find(filter).populate('employer', 'name email');
+    res.json({ jobs });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // @desc    Apply to a job (updated to use applications array)
 // @route   POST /api/jobs/:id/apply
 // @access  Private
@@ -88,25 +107,29 @@ router.post('/:id/apply', protect, async (req, res) => {
 router.get('/:id/applicants', protect, async (req, res) => {
   try {
     const job = await Job.findById(req.params.id)
-      .populate('applicants', 'name email role')
       .populate('applications.user', 'name email role');
-    if (!job) return res.status(404).json({ message: 'Job not found' });
-    if (job.employer.toString() !== req.user._id.toString()) {
+
+    if (!job) {
+      return res.status(404).json({ message: 'Job not found' });
+    }
+
+    if (job.employer.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Access denied' });
     }
-    // Return applicants with their application status
-    const applicantsWithStatus = job.applicants.map(applicant => {
-      const app = job.applications.find(a => a.user && a.user._id.toString() === applicant._id.toString());
-      return {
-        _id: applicant._id,
-        name: applicant.name,
-        email: applicant.email,
-        role: applicant.role,
-        status: app ? app.status : 'pending'
-      };
-    });
-    res.json(applicantsWithStatus);
-  } catch (err) {
+
+    // Map applications to include isBookmarked status
+    const applicants = job.applications.map(app => ({
+      _id: app.user._id,
+      name: app.user.name,
+      email: app.user.email,
+      role: app.user.role,
+      status: app.status,
+      isBookmarked: app.isBookmarked || false
+    }));
+
+    res.json(applicants);
+  } catch (error) {
+    console.error('Error getting applicants:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -249,56 +272,98 @@ router.put('/:jobId/applications/:userId/status', protect, async (req, res) => {
   }
 });
 
-// Employer bookmarks an applicant
-router.post('/:jobId/applications/:userId/bookmark', protect, async (req, res) => {
-  try {
-    const { jobId, userId } = req.params;
-    const job = await Job.findById(jobId);
-    if (!job) return res.status(404).json({ message: 'Job not found' });
-    if (job.employer.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: 'Access denied' });
-    }
-    if (!job.bookmarkedApplicants) job.bookmarkedApplicants = [];
-    if (job.bookmarkedApplicants.map(id => id.toString()).includes(userId)) {
-      return res.status(400).json({ message: 'Applicant already bookmarked' });
-    }
-    job.bookmarkedApplicants.push(userId);
-    await job.save();
-    res.json({ message: 'Applicant bookmarked' });
-  } catch (err) {
-    res.status(500).json({ message: 'Server error', error: err.message });
-  }
-});
-
-// Employer removes a bookmark from an applicant
-router.delete('/:jobId/applications/:userId/bookmark', protect, async (req, res) => {
-  try {
-    const { jobId, userId } = req.params;
-    const job = await Job.findById(jobId);
-    if (!job) return res.status(404).json({ message: 'Job not found' });
-    if (job.employer.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: 'Access denied' });
-    }
-    job.bookmarkedApplicants = (job.bookmarkedApplicants || []).filter(id => id.toString() !== userId);
-    await job.save();
-    res.json({ message: 'Bookmark removed' });
-  } catch (err) {
-    res.status(500).json({ message: 'Server error', error: err.message });
-  }
-});
-
-// Employer views bookmarked applicants for a job
+// Get bookmarked applicants for a job
 router.get('/:jobId/bookmarked-applicants', protect, async (req, res) => {
   try {
     const { jobId } = req.params;
-    const job = await Job.findById(jobId).populate('bookmarkedApplicants', 'name email role');
-    if (!job) return res.status(404).json({ message: 'Job not found' });
-    if (job.employer.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: 'Access denied' });
+    const employerId = req.user._id;
+
+    // Check if job exists and employer owns it
+    const job = await Job.findOne({ _id: jobId, employer: employerId })
+      .populate('applications.user', 'name email role');
+
+    if (!job) {
+      return res.status(404).json({ message: 'Job not found or unauthorized' });
     }
-    res.json({ bookmarkedApplicants: job.bookmarkedApplicants });
-  } catch (err) {
-    res.status(500).json({ message: 'Server error', error: err.message });
+
+    // Get bookmarked applicants
+    const bookmarkedApplicants = job.applications
+      .filter(app => app.isBookmarked)
+      .map(app => ({
+        _id: app.user._id,
+        name: app.user.name,
+        email: app.user.email,
+        role: app.user.role
+      }));
+
+    res.json({ bookmarkedApplicants });
+  } catch (error) {
+    console.error('Error getting bookmarked applicants:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Bookmark an applicant
+router.post('/:jobId/applications/:userId/bookmark', protect, async (req, res) => {
+  try {
+    const { jobId, userId } = req.params;
+    const employerId = req.user._id;
+
+    // Check if job exists and employer owns it
+    const job = await Job.findOne({ _id: jobId, employer: employerId });
+    if (!job) {
+      return res.status(404).json({ message: 'Job not found or unauthorized' });
+    }
+
+    // Find the application
+    const application = job.applications.find(app => app.user.toString() === userId);
+    if (!application) {
+      return res.status(404).json({ message: 'Application not found' });
+    }
+
+    // Add bookmark if not already bookmarked
+    if (!application.isBookmarked) {
+      application.isBookmarked = true;
+      await job.save();
+      res.json({ message: 'Applicant bookmarked successfully' });
+    } else {
+      res.status(400).json({ message: 'Applicant already bookmarked' });
+    }
+  } catch (error) {
+    console.error('Error bookmarking applicant:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Remove bookmark from an applicant
+router.delete('/:jobId/applications/:userId/bookmark', protect, async (req, res) => {
+  try {
+    const { jobId, userId } = req.params;
+    const employerId = req.user._id;
+
+    // Check if job exists and employer owns it
+    const job = await Job.findOne({ _id: jobId, employer: employerId });
+    if (!job) {
+      return res.status(404).json({ message: 'Job not found or unauthorized' });
+    }
+
+    // Find the application
+    const application = job.applications.find(app => app.user.toString() === userId);
+    if (!application) {
+      return res.status(404).json({ message: 'Application not found' });
+    }
+
+    // Remove bookmark if bookmarked
+    if (application.isBookmarked) {
+      application.isBookmarked = false;
+      await job.save();
+      res.json({ message: 'Bookmark removed successfully' });
+    } else {
+      res.status(400).json({ message: 'Applicant not bookmarked' });
+    }
+  } catch (error) {
+    console.error('Error removing bookmark:', error);
+    res.status(500).json({ message: 'Server error' });
   }
 });
 

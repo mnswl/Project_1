@@ -279,54 +279,72 @@ li {
 }
 
 .message {
-  margin: 10px 0;
-  padding: 10px 15px;
-  border-radius: 15px;
+  margin: 10px;
+  padding: 10px;
+  border-radius: 10px;
   max-width: 70%;
   word-wrap: break-word;
 }
 
 .message.own {
-  background-color: var(--message-own-bg);
-  color: var(--message-own-text);
+  background-color: #007bff;
+  color: white;
   margin-left: auto;
-  text-align: right;
 }
 
 .message.other {
-  background-color: var(--message-bg);
-  color: var(--text-color);
+  background-color: #e9ecef;
+  color: #212529;
   margin-right: auto;
 }
 
-.message-time {
-  font-size: 10px;
+.message.pending {
   opacity: 0.7;
-  margin-top: 5px;
+}
+
+.message-content {
+  margin-bottom: 5px;
+}
+
+.message-time {
+  font-size: 0.8em;
+  opacity: 0.8;
+}
+
+.message-status {
+  font-size: 0.8em;
+  font-style: italic;
+  opacity: 0.8;
+  text-align: right;
 }
 
 #chat-input-container {
   display: flex;
-  gap: 10px;
-  align-items: center;
+  flex-direction: column;
+  padding: 10px;
+  border-top: 1px solid #ddd;
+  background-color: white;
 }
 
 #chat-input {
   flex: 1;
-  padding: 10px;
-  border-radius: 20px;
-  border: 1px solid var(--border-color);
-  background-color: var(--input-bg);
-  color: var(--text-color);
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  margin-right: 10px;
 }
 
 #send-message-btn {
-  padding: 10px 20px;
-  border-radius: 20px;
-  background-color: var(--button-bg);
+  padding: 8px 15px;
+  background-color: #007bff;
   color: white;
   border: none;
+  border-radius: 5px;
   cursor: pointer;
+}
+
+#send-message-btn:hover {
+  background-color: #0056b3;
 }
 
 #no-chat-selected {
@@ -465,4 +483,170 @@ li {
   color: var(--text-color);
   opacity: 0.7;
   font-style: italic;
+}
+
+.message-template-container {
+  margin-bottom: 10px;
+  width: 100%;
+}
+
+#message-template {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  background-color: white;
+  font-size: 14px;
+}
+
+#message-template:focus {
+  outline: none;
+  border-color: #007bff;
+}
+
+.chat-input-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.form-group {
+  margin-bottom: 1rem;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: bold;
+}
+
+.form-group input,
+.form-group textarea,
+.form-group select {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 1rem;
+}
+
+.form-group textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+
+#jobForm {
+  max-width: 600px;
+  margin: 0 auto 2rem;
+  padding: 1rem;
+  background-color: #f9f9f9;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+#jobForm button[type="submit"] {
+  width: 100%;
+  padding: 0.75rem;
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+#jobForm button[type="submit"]:hover {
+  background-color: #45a049;
+}
+
+.applicant-card {
+  background-color: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.applicant-card h4 {
+  margin: 0 0 0.5rem 0;
+  color: #333;
+}
+
+.applicant-card p {
+  margin: 0 0 1rem 0;
+  color: #666;
+}
+
+.remove-bookmark-btn {
+  background-color: #ff4444;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.remove-bookmark-btn:hover {
+  background-color: #cc0000;
+}
+
+.bookmark-btn {
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.bookmark-btn:hover {
+  background-color: #45a049;
+}
+
+.applicant-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.chat-btn {
+  background-color: #2196F3;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.chat-btn:hover {
+  background-color: #1976D2;
+}
+
+.job-card {
+  background-color: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.job-card h3 {
+  margin: 0 0 1rem 0;
+  color: #333;
+}
+
+.job-card p {
+  margin: 0.5rem 0;
+  color: #666;
+}
+
+.job-card button {
+  margin-top: 1rem;
+  margin-right: 0.5rem;
 }

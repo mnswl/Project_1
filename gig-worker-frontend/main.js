@@ -17,36 +17,100 @@ function getStoredAuth() {
   return { token, role, name, userId };
 }
 
+// Message templates
+const messageTemplates = {
+  intro: "Hi! I'm interested in discussing the job opportunity. Could you tell me more about the position?",
+  "follow-up": "Just following up on our previous conversation. I'm still very interested in this opportunity.",
+  schedule: "Would you be available for a quick chat? I'm free on [DAY] at [TIME].",
+  accept: "Thank you for your application! We'd like to move forward with your candidacy. When would be a good time to discuss next steps?",
+  reject: "Thank you for your interest. While your qualifications are impressive, we've decided to move forward with other candidates at this time. We'll keep your application on file for future opportunities.",
+  custom: ""
+};
+
+// Insert template text into chat input
+window.insertTemplate = function() {
+  const templateSelect = document.getElementById('message-template');
+  const chatInput = document.getElementById('chat-input');
+  const selectedTemplate = templateSelect.value;
+
+  if (selectedTemplate && messageTemplates[selectedTemplate]) {
+    chatInput.value = messageTemplates[selectedTemplate];
+    chatInput.focus();
+    
+    // If it's the schedule template, add current date
+    if (selectedTemplate === 'schedule') {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const day = tomorrow.toLocaleDateString('en-US', { weekday: 'long' });
+      const time = '10:00 AM';
+      chatInput.value = chatInput.value.replace('[DAY]', day).replace('[TIME]', time);
+    }
+  }
+  
+  // Reset select to default option
+  templateSelect.value = '';
+}
+
 // Initialize Socket.IO connection
 function initializeSocket() {
   if (token) {
-    socket = io('http://localhost:5000', {
-      auth: {
-        token: token
-      }
-    });
+    try {
+      socket = io('http://localhost:5000', {
+        auth: {
+          token: token
+        },
+        reconnection: true,
+        reconnectionAttempts: 5,
+        reconnectionDelay: 1000,
+        withCredentials: false,
+        transports: ['websocket', 'polling']
+      });
 
-    socket.on('connect', () => {
-      console.log('✅ Connected to chat server');
-    });
+      socket.on('connect', () => {
+        console.log('✅ Connected to chat server');
+        // Re-join chat room if there was an active conversation
+        if (currentChatUser) {
+          socket.emit('join_chat', currentChatUser._id);
+        }
+        // Load conversations when socket connects
+        loadConversations();
+      });
 
-    socket.on('new_message', (message) => {
-      handleNewMessage(message);
-    });
+      socket.on('connect_error', (error) => {
+        console.error('❌ Socket connection error:', error.message);
+        alert('Chat connection failed. Please refresh the page to try again.');
+      });
 
+      socket.on('new_message', (message) => {
+        console.log('📩 New message received:', message);
+        handleNewMessage(message);
+      });
 
-    socket.on('user_typing', (data) => {
-      showTypingIndicator(data);
-    });
+      socket.on('message_sent', (message) => {
+        console.log('✅ Message sent successfully:', message);
+        // Remove pending status from the message
+        const pendingMessages = document.querySelectorAll('.message.pending');
+        pendingMessages.forEach(msg => msg.classList.remove('pending'));
+        // Refresh conversations
+        loadConversations();
+      });
 
-    // Handle connection errors
-    socket.on('connect_error', (error) => {
-      console.error('❌ Socket connection error:', error.message);
-    });
+      socket.on('message_error', (error) => {
+        console.error('❌ Message error:', error);
+        alert('Failed to send message. Please try again.');
+      });
 
-    socket.on('disconnect', () => {
-      console.log('❌ Disconnected from chat server');
-    });
+      socket.on('user_typing', (data) => {
+        showTypingIndicator(data);
+      });
+
+      socket.on('disconnect', () => {
+        console.log('❌ Disconnected from chat server');
+      });
+    } catch (error) {
+      console.error('❌ Failed to initialize socket:', error);
+      alert('Chat initialization failed. Please refresh the page.');
+    }
   }
 }
 
@@ -129,20 +193,29 @@ function initializeChat() {
 // Load conversations
 async function loadConversations() {
   try {
+    console.log('🔍 Loading conversations...');
     const response = await fetch(`${apiUrl}/chat/conversations`, {
+      method: 'GET',
       headers: {
-        'Authorization': `Bearer ${token}`
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
       }
     });
 
-    if (response.ok) {
-      conversations = await response.json();
-      displayConversations();
-    } else {
-      console.error('Failed to load conversations');
+    if (!response.ok) {
+      throw new Error(`Failed to load conversations: ${response.status}`);
     }
+
+    const data = await response.json();
+    console.log('✅ Conversations loaded:', data);
+
+    // Make sure we have an array of conversations
+    conversations = Array.isArray(data) ? data : [];
+    
+    // Update UI
+    displayConversations();
   } catch (error) {
-    console.error('Error loading conversations:', error);
+    console.error('❌ Error loading conversations:', error);
   }
 }
 
@@ -151,23 +224,36 @@ function displayConversations() {
   const conversationsList = document.getElementById('conversations-list');
   conversationsList.innerHTML = '';
 
-  if (conversations.length === 0) {
+  if (!conversations || conversations.length === 0) {
     conversationsList.innerHTML = '<div class="no-conversations">No conversations yet</div>';
     return;
   }
 
   conversations.forEach(conversation => {
+    if (!conversation.otherUser) {
+      console.error('❌ Invalid conversation format:', conversation);
+      return;
+    }
+
     const conversationDiv = document.createElement('div');
     conversationDiv.className = 'conversation-item';
+    if (currentChatUser && currentChatUser._id === conversation.otherUser._id) {
+      conversationDiv.classList.add('active');
+    }
+    
     conversationDiv.onclick = () => selectConversation(conversation);
 
     const unreadBadge = conversation.unreadCount > 0 
       ? `<span class="unread-badge">${conversation.unreadCount}</span>` 
       : '';
 
+    const lastMessage = conversation.lastMessage 
+      ? conversation.lastMessage.content 
+      : 'No messages yet';
+
     conversationDiv.innerHTML = `
       <div class="conversation-name">${conversation.otherUser.name}</div>
-      <div class="conversation-preview">${conversation.lastMessage.content}</div>
+      <div class="conversation-preview">${lastMessage}</div>
       ${unreadBadge}
     `;
 
@@ -239,13 +325,14 @@ function displayMessage(message) {
   const messageDiv = document.createElement('div');
   
   const isOwnMessage = message.sender._id === getCurrentUserId();
-  messageDiv.className = `message ${isOwnMessage ? 'own' : 'other'}`;
+  messageDiv.className = `message ${isOwnMessage ? 'own' : 'other'} ${message.pending ? 'pending' : ''}`;
   
   const messageTime = new Date(message.createdAt).toLocaleTimeString();
   
   messageDiv.innerHTML = `
     <div class="message-content">${message.content}</div>
     <div class="message-time">${messageTime}</div>
+    ${message.pending ? '<div class="message-status">Sending...</div>' : ''}
   `;
   
   chatMessages.appendChild(messageDiv);
@@ -253,16 +340,79 @@ function displayMessage(message) {
 }
 
 // Send a message
-function sendMessage() {
+async function sendMessage() {
   const chatInput = document.getElementById('chat-input');
   const content = chatInput.value.trim();
   
-  if (content && currentChatUser && socket) {
-    socket.emit('send_message', {
-      receiverId: currentChatUser._id,
-      content: content
-    });
+  if (!content) {
+    return;
+  }
+
+  if (!currentChatUser) {
+    alert('Please select a conversation first.');
+    return;
+  }
+
+  try {
+    console.log('📤 Sending message...');
+    
+    // Clear input immediately for better UX
+    const messageContent = content;
     chatInput.value = '';
+
+    // Create a temporary message element
+    const tempMessage = {
+      content: messageContent,
+      sender: {
+        _id: getCurrentUserId()
+      },
+      createdAt: new Date(),
+      pending: true
+    };
+    displayMessage(tempMessage);
+
+    // Send via REST API
+    const response = await fetch(`${apiUrl}/chat/messages`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        receiverId: currentChatUser._id,
+        content: messageContent
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to send message: ${response.status}`);
+    }
+
+    const message = await response.json();
+    console.log('✅ Message sent successfully:', message);
+
+    // Remove pending status from temporary message
+    const pendingMessages = document.querySelectorAll('.message.pending');
+    pendingMessages.forEach(msg => msg.classList.remove('pending'));
+
+    // Also emit via socket for real-time
+    if (socket && socket.connected) {
+      socket.emit('send_message', {
+        receiverId: currentChatUser._id,
+        content: messageContent
+      });
+    }
+
+    // Refresh conversations after a short delay
+    setTimeout(async () => {
+      console.log('🔄 Refreshing conversations...');
+      await loadConversations();
+    }, 1000);
+
+  } catch (error) {
+    console.error('❌ Error sending message:', error);
+    alert('Failed to send message. Please try again.');
+    chatInput.value = messageContent;
   }
 }
 
@@ -274,8 +424,8 @@ function handleNewMessage(message) {
     showNotification(`New message from ${message.sender.name}`);
   }
 
-  // Update conversations list
-  updateConversationsList();
+  // Update conversations list immediately
+  loadConversations();
 
   // Display message if current chat is open
   if (currentChatUser && (message.sender._id === currentChatUser._id || message.receiver._id === currentChatUser._id)) {
@@ -399,87 +549,120 @@ if (role !== "employer" && role !== "worker" && role !== "admin") {
   window.location.href = "index.html";
 }
 
-// Initialize everything when DOM is loaded
+// Initialize all functionality when the DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
+  // Initialize theme and chat functionality
   initializeTheme();
   initializeChat();
   initializeSocket();
   requestNotificationPermission();
-});
 
-document.getElementById("logoutBtn").addEventListener("click", () => {
-  if (socket) {
-    socket.disconnect();
-  }
-  localStorage.clear();
-  window.location.href = "index.html";
-});
+  // Initialize role-specific views and functionality
+  const role = localStorage.getItem('role');
+  const employerView = document.getElementById('employerView');
+  const workerView = document.getElementById('workerView');
+  const adminView = document.getElementById('adminView');
 
-const employerView = document.getElementById("employerView");
-const workerView = document.getElementById("workerView");
-const adminView = document.getElementById("adminView");
+  // Hide all views initially
+  employerView.style.display = 'none';
+  workerView.style.display = 'none';
+  adminView.style.display = 'none';
 
-// Role-based view loading
-if (role === "employer") {
-  console.log("✅ Loading employer view");
-  employerView.style.display = "block";
-  workerView.style.display = "none";
-  loadMyJobs();
-  loadBookmarkedApplicants();
-  
-  document.getElementById("jobForm").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const job = {
-      title: document.getElementById("title").value,
-      description: document.getElementById("description").value,
-      location: document.getElementById("location").value,
-      payRate: document.getElementById("payRate").value,
-      jobType: document.getElementById("jobType").value
-    };
+  // Show appropriate view based on role
+  if (role === 'employer') {
+    console.log("✅ Loading employer view");
+    employerView.style.display = 'block';
+    loadEmployerJobs();
+    loadMyJobs();
+    loadBookmarkedApplicants();
     
-    try {
-      const res = await fetch(`${apiUrl}/jobs`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify(job)
-      });
-      
-      const data = await res.json();
-      
-      if (res.ok) {
-        alert("Job posted successfully!");
-        document.getElementById("jobForm").reset();
-        loadMyJobs();
-      } else {
-        alert(data.message || "Error posting job");
-      }
-    } catch (err) {
-      console.error("Error posting job:", err);
-      alert("Error posting job");
+    // Add employer-specific event listeners
+    const employerFilterBtn = document.getElementById('employerFilterBtn');
+    if (employerFilterBtn) {
+      employerFilterBtn.addEventListener('click', loadEmployerJobs);
     }
+
+    // Add job form submission handler if it exists
+    const jobForm = document.getElementById('jobForm');
+    if (jobForm) {
+      jobForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        try {
+          const jobData = {
+            title: document.getElementById('title').value,
+            description: document.getElementById('description').value,
+            location: document.getElementById('location').value,
+            payRate: parseFloat(document.getElementById('payRate').value),
+            jobType: document.getElementById('jobType').value
+          };
+
+          const response = await fetch(`${apiUrl}/jobs`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+            body: JSON.stringify(jobData)
+          });
+
+          if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.message || 'Failed to post job');
+          }
+
+          alert('Job posted successfully!');
+          document.getElementById('jobForm').reset();
+          // Refresh the job listings
+          loadEmployerJobs();
+        } catch (error) {
+          console.error('Error posting job:', error);
+          alert(error.message);
+        }
+      });
+    }
+  } else if (role === 'worker') {
+    console.log("✅ Loading worker view");
+    workerView.style.display = 'block';
+    loadJobs();
+    loadMyApplications();
+    
+    // Add worker-specific event listeners
+    document.getElementById('filterBtn').addEventListener('click', loadJobs);
+    document.getElementById('showFavoritesBtn').addEventListener('click', toggleFavorites);
+  } else if (role === 'admin') {
+    console.log("✅ Loading admin view");
+    adminView.style.display = 'block';
+    loadAllJobsForAdmin();
+  }
+
+  // Add logout functionality
+  document.getElementById('logoutBtn').addEventListener('click', () => {
+    if (socket) {
+      socket.disconnect();
+    }
+    // Clear all auth data but preserve theme setting
+    localStorage.removeItem('token');
+    localStorage.removeItem('role');
+    localStorage.removeItem('name');
+    localStorage.removeItem('userId');
+    window.location.href = 'index.html';
   });
-}
 
-if (role === "worker") {
-  console.log("✅ Loading worker view");
-  workerView.style.display = "block";
-  employerView.style.display = "none";
-  loadJobs();
-  loadMyApplications();
-  
-  document.getElementById("filterBtn").addEventListener("click", loadJobs);
-  document.getElementById("showFavoritesBtn").addEventListener("click", toggleFavorites);
-}
-
-if (role === "admin") {
-  adminView.style.display = "block";
-  employerView.style.display = "none";
-  workerView.style.display = "none";
-  loadAllJobsForAdmin();
-}
+  // Add applicants modal close button handler
+  const closeApplicantsBtn = document.getElementById('close-applicants-btn');
+  if (closeApplicantsBtn) {
+    closeApplicantsBtn.addEventListener('click', function() {
+      const applicantsSection = document.getElementById('applicants-section');
+      if (applicantsSection) {
+        applicantsSection.style.display = 'none';
+      } else {
+        console.error('Applicants section not found');
+      }
+    });
+  } else {
+    console.error('Close applicants button not found');
+  }
+});
 
 async function loadJobs() {
   const location = document.getElementById("filterLocation").value;
@@ -624,18 +807,15 @@ function toggleFavorites() {
 
 async function loadMyJobs() {
   try {
-    const res = await fetch(`${apiUrl}/jobs`, {
+    const res = await fetch(`${apiUrl}/jobs/mine`, {
       headers: {
         Authorization: `Bearer ${token}`
       }
     });
-    
     const data = await res.json();
     const postedJobs = document.getElementById("postedJobs");
     postedJobs.innerHTML = "";
-    
     const jobs = data.jobs || data;
-    
     if (jobs && jobs.length > 0) {
       const userId = getCurrentUserId();
       jobs.forEach((job) => {
@@ -753,61 +933,74 @@ async function updateJob(jobId, data) {
 window.editJob = editJob;
 window.deleteJob = deleteJob;
 
+// View applicants for a job
 async function viewApplicants(jobId, jobTitle) {
-  const { token } = getStoredAuth();
   try {
-    const response = await fetch(`${apiUrl}/jobs/${jobId}/applicants`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    const data = await response.json();
-    // Fetch job to get bookmarkedApplicants
-    const jobRes = await fetch(`${apiUrl}/jobs/${jobId}`);
-    const jobData = await jobRes.json();
-    const bookmarked = (jobData.bookmarkedApplicants || []).map(id => id.toString());
-    if (response.ok) {
-      const applicantsJobTitle = document.getElementById('applicants-job-title');
-      const applicantsList = document.getElementById('applicants-list');
-      const applicantsSection = document.getElementById('applicants-section');
-      applicantsJobTitle.textContent = jobTitle;
-      applicantsList.innerHTML = '';
-      if (data.length > 0) {
-        for (const applicant of data) {
-          const isBookmarked = bookmarked.includes(applicant._id);
-          const li = document.createElement('li');
-          li.innerHTML = `
-            <strong>${applicant.name}</strong><br>
-            <em>Email:</em> ${applicant.email}<br>
-            <em>Role:</em> ${applicant.role}<br>
-            <em>Status:</em> <span id="status-${jobId}-${applicant._id}">${applicant.status}</span><br>
-            <button onclick="updateApplicationStatus('${jobId}','${applicant._id}','accepted')">Accept</button>
-            <button onclick="updateApplicationStatus('${jobId}','${applicant._id}','rejected')">Reject</button>
-            ${isBookmarked
-              ? `<button onclick="removeBookmark('${jobId}','${applicant._id}')">Remove Bookmark</button>`
-              : `<button onclick="bookmarkApplicant('${jobId}','${applicant._id}')">Bookmark</button>`}
-          `;
-          applicantsList.appendChild(li);
-        }
-      } else {
-        applicantsList.innerHTML = '<li>No applicants yet</li>';
-      }
-      applicantsSection.style.display = 'block';
-    } else {
-      alert(data.message || 'Failed to load applicants');
+    if (!jobId) {
+      throw new Error('Invalid job ID');
     }
+
+    const response = await fetch(`http://localhost:5000/api/jobs/${jobId}/applicants`, {
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      }
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to load applicants');
+    }
+
+    const applicants = await response.json();
+    const applicantsList = document.getElementById('applicants-list');
+    const applicantsSection = document.getElementById('applicants-section');
+    const applicantsJobTitle = document.getElementById('applicants-job-title');
+    
+    applicantsList.innerHTML = '';
+    applicantsSection.style.display = 'block';
+    applicantsJobTitle.textContent = `Applicants for: ${jobTitle}`;
+
+    if (!applicants || applicants.length === 0) {
+      applicantsList.innerHTML = '<li>No applicants yet</li>';
+      return;
+    }
+
+    applicants.forEach(applicant => {
+      const li = document.createElement('li');
+      li.innerHTML = `
+        <div class="applicant-card">
+          <h4>${applicant.name}</h4>
+          <p>${applicant.email}</p>
+          <div class="applicant-actions">
+            <button 
+              onclick="toggleBookmark('${jobId}', '${applicant._id}', ${applicant.isBookmarked})"
+              data-bookmark-job="${jobId}"
+              data-bookmark-user="${applicant._id}"
+              data-bookmarked="${applicant.isBookmarked}"
+              class="${applicant.isBookmarked ? 'remove-bookmark-btn' : 'bookmark-btn'}"
+            >
+              ${applicant.isBookmarked ? '✖ Remove Bookmark' : '⭐ Bookmark'}
+            </button>
+            <button 
+              onclick="startChat('${applicant._id}', '${applicant.name}')"
+              class="chat-btn"
+            >
+              💬 Chat
+            </button>
+          </div>
+        </div>
+      `;
+      applicantsList.appendChild(li);
+    });
   } catch (error) {
-    alert('Network error. Please try again.');
+    console.error('Error viewing applicants:', error);
+    alert(error.message);
   }
 }
 
-window.viewApplicants = viewApplicants;
-
-document.addEventListener('DOMContentLoaded', () => {
-    const closeApplicantsBtn = document.getElementById('close-applicants-btn');
-    if(closeApplicantsBtn) {
-        closeApplicantsBtn.addEventListener('click', () => {
-            document.getElementById('applicants-section').style.display = 'none';
-        });
-    }
+// Close applicants modal
+document.getElementById('close-applicants-btn').addEventListener('click', () => {
+  document.getElementById('applicants-section').style.display = 'none';
 });
 
 async function loadMyApplications() {
@@ -891,9 +1084,11 @@ window.updateApplicationStatus = async function(jobId, userId, status) {
       document.getElementById(`status-${jobId}-${userId}`).textContent = status;
       alert('Status updated!');
     } else {
-      alert('Failed to update status.');
+      const data = await res.json();
+      alert(data.message || 'Failed to update status.');
     }
   } catch (err) {
+    console.error('Error updating status:', err);
     alert('Failed to update status.');
   }
 }
@@ -912,6 +1107,7 @@ window.bookmarkApplicant = async function(jobId, userId) {
       alert(data.message || 'Failed to bookmark applicant.');
     }
   } catch (err) {
+    console.error('Error bookmarking applicant:', err);
     alert('Failed to bookmark applicant.');
   }
 }
@@ -929,6 +1125,7 @@ window.removeBookmark = async function(jobId, userId) {
       alert('Failed to remove bookmark.');
     }
   } catch (err) {
+    console.error('Error removing bookmark:', err);
     alert('Failed to remove bookmark.');
   }
 }
@@ -977,3 +1174,246 @@ window.deleteJobAsAdmin = async function(jobId) {
     }
   }
 }
+
+// Load employer's posted jobs and initialize bookmarked applicants
+async function loadEmployerJobs() {
+  try {
+    const response = await fetch('http://localhost:5000/api/jobs/mine', {
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to load jobs');
+    }
+
+    const { jobs } = await response.json();
+    const postedJobsList = document.getElementById('postedJobs');
+    postedJobsList.innerHTML = '';
+
+    if (jobs.length === 0) {
+      postedJobsList.innerHTML = '<li>No jobs posted yet</li>';
+      return;
+    }
+
+    jobs.forEach(job => {
+      const li = document.createElement('li');
+      li.innerHTML = `
+        <div class="job-card">
+          <h3>${job.title}</h3>
+          <p>${job.description}</p>
+          <p>Location: ${job.location}</p>
+          <p>Pay Rate: $${job.payRate}/hr</p>
+          <p>Type: ${job.jobType}</p>
+          <div class="job-actions">
+            <button onclick="viewBookmarkedApplicants('${job._id}', '${job.title}')">View Bookmarked Applicants</button>
+            <button onclick="viewApplicants('${job._id}', '${job.title}')">View All Applicants</button>
+          </div>
+        </div>
+      `;
+      postedJobsList.appendChild(li);
+    });
+  } catch (error) {
+    console.error('Error loading employer jobs:', error);
+    alert(error.message);
+  }
+}
+
+// View bookmarked applicants for a job
+async function viewBookmarkedApplicants(jobId, jobTitle) {
+  try {
+    if (!jobId) {
+      throw new Error('Invalid job ID');
+    }
+
+    // Use applicants endpoint instead and filter for bookmarked ones
+    const response = await fetch(`http://localhost:5000/api/jobs/${jobId}/applicants`, {
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      }
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to load bookmarked applicants');
+    }
+
+    const applicants = await response.json();
+    const bookmarkedApplicants = applicants.filter(app => app.isBookmarked);
+    
+    const bookmarkedList = document.getElementById('bookmarkedApplicantsList');
+    const applicantsSection = document.getElementById('applicants-section');
+    const applicantsJobTitle = document.getElementById('applicants-job-title');
+    
+    bookmarkedList.innerHTML = '';
+    applicantsSection.style.display = 'block';
+    applicantsJobTitle.textContent = `Bookmarked Applicants for: ${jobTitle}`;
+
+    if (!bookmarkedApplicants || bookmarkedApplicants.length === 0) {
+      bookmarkedList.innerHTML = '<li>No bookmarked applicants for this job</li>';
+      return;
+    }
+
+    bookmarkedApplicants.forEach(applicant => {
+      const li = document.createElement('li');
+      li.innerHTML = `
+        <div class="applicant-card">
+          <h4>${applicant.name}</h4>
+          <p>${applicant.email}</p>
+          <div class="applicant-actions">
+            <button 
+              onclick="toggleBookmark('${jobId}', '${applicant._id}', true)"
+              class="remove-bookmark-btn"
+            >
+              ✖ Remove Bookmark
+            </button>
+            <button 
+              onclick="startChat('${applicant._id}', '${applicant.name}')"
+              class="chat-btn"
+            >
+              💬 Chat
+            </button>
+          </div>
+        </div>
+      `;
+      bookmarkedList.appendChild(li);
+    });
+  } catch (error) {
+    console.error('Error loading bookmarked applicants:', error);
+    alert(error.message);
+  }
+}
+
+// Handle bookmark/unbookmark applicant
+async function toggleBookmark(jobId, userId, isBookmarked) {
+  try {
+    if (!jobId || !userId) {
+      throw new Error('Invalid job or user ID');
+    }
+
+    const method = isBookmarked ? 'DELETE' : 'POST';
+    const response = await fetch(`http://localhost:5000/api/jobs/${jobId}/applications/${userId}/bookmark`, {
+      method,
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      }
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to toggle bookmark');
+    }
+
+    // Show success message
+    alert(isBookmarked ? 'Bookmark removed successfully' : 'Applicant bookmarked successfully');
+
+    // Refresh the current view
+    if (document.getElementById('bookmarkedApplicantsList').innerHTML) {
+      await viewBookmarkedApplicants(jobId);
+    } else {
+      await viewApplicants(jobId);
+    }
+  } catch (error) {
+    console.error('Error toggling bookmark:', error);
+    alert(error.message);
+  }
+}
+
+// Start a chat with an applicant
+async function startChat(userId, userName) {
+  try {
+    if (!userId) {
+      throw new Error('Invalid user ID');
+    }
+
+    // Show chat modal
+    const chatModal = document.getElementById('chat-modal');
+    chatModal.style.display = 'block';
+
+    // Set chat header
+    const chatWithName = document.getElementById('chat-with-name');
+    chatWithName.textContent = `Chat with ${userName}`;
+    document.getElementById('chat-header').style.display = 'block';
+
+    // Show chat input container
+    const chatInputContainer = document.getElementById('chat-input-container');
+    chatInputContainer.style.display = 'block';
+
+    // Hide no chat selected message
+    document.getElementById('no-chat-selected').style.display = 'none';
+
+    // Show chat messages
+    const chatMessages = document.getElementById('chat-messages');
+    chatMessages.style.display = 'block';
+    chatMessages.innerHTML = ''; // Clear previous messages
+
+    // Load chat history
+    try {
+      const response = await fetch(`http://localhost:5000/api/chat/messages/${userId}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to load chat history');
+      }
+
+      const messages = await response.json();
+      
+      if (messages && messages.length > 0) {
+        messages.forEach(message => {
+          const messageDiv = document.createElement('div');
+          messageDiv.className = `message ${message.sender._id === userId ? 'received' : 'sent'}`;
+          messageDiv.innerHTML = `
+            <p class="message-text">${message.content}</p>
+            <span class="message-time">${new Date(message.createdAt).toLocaleTimeString()}</span>
+          `;
+          chatMessages.appendChild(messageDiv);
+        });
+
+        // Mark messages as read using POST instead of PATCH
+        try {
+          await fetch(`http://localhost:5000/api/chat/mark-read/${userId}`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+          });
+        } catch (markReadError) {
+          console.error('Error marking messages as read:', markReadError);
+          // Don't throw error here, just log it
+        }
+      } else {
+        const noMessagesDiv = document.createElement('div');
+        noMessagesDiv.className = 'no-messages';
+        noMessagesDiv.textContent = 'No messages yet. Start the conversation!';
+        chatMessages.appendChild(noMessagesDiv);
+      }
+    } catch (error) {
+      console.error('Error loading chat history:', error);
+      chatMessages.innerHTML = '<div class="error-message">Failed to load chat history. Please try again later.</div>';
+    }
+
+    // Set current chat partner
+    window.currentChatPartner = userId;
+
+    // Scroll to bottom of chat
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  } catch (error) {
+    console.error('Error starting chat:', error);
+    alert(error.message);
+  }
+}
+
+// Make functions available globally
+window.viewBookmarkedApplicants = viewBookmarkedApplicants;
+window.viewApplicants = viewApplicants;
+window.toggleBookmark = toggleBookmark;
+window.startChat = startChat;
+
+// Close applicants modal
+document.getElementById('close-applicants-btn').addEventListener('click', () => {
+  document.getElementById('applicants-section').style.display = 'none';
+});

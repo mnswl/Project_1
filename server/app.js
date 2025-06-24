@@ -23,8 +23,9 @@ const server = http.createServer(app);
 // Socket.IO setup with CORS
 const io = new SocketIOServer(server, {
   cors: {
-    origin: "*", // In production, specify your frontend domain
-    methods: ["GET", "POST"]
+    origin: true, // Allow all origins
+    methods: ["GET", "POST"],
+    credentials: false // Disable credentials for null origin
   }
 });
 
@@ -32,7 +33,12 @@ const io = new SocketIOServer(server, {
 app.set('io', io);
 
 // Middlewares
-app.use(cors());
+app.use(cors({
+  origin: true, // Allow all origins
+  credentials: false, // Disable credentials for null origin
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express.json());
 
 // Test route

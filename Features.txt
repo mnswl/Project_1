@@ -6,3 +6,5 @@ Employers can update application statuses (pending, accepted, rejected)
 Workers can view application status
 Workers can save favorite jobs
 Employers can bookmark applicants
+Messaging between workers and employers
+Conversation history

@@ -11,7 +11,8 @@ const jobSchema = new mongoose.Schema({
   applications: [{
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     status: { type: String, enum: ['pending', 'accepted', 'rejected'], default: 'pending' },
-    appliedAt: { type: Date, default: Date.now }
+    appliedAt: { type: Date, default: Date.now },
+    isBookmarked: { type: Boolean, default: false }
   }],
   bookmarkedApplicants: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   isFlagged: { type: Boolean, default: false },
