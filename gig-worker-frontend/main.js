@@ -306,13 +306,19 @@ function showTypingIndicator(data) {
 
 // Show notification
 function showNotification(message) {
-  // Simple notification - you can enhance this
-  if (Notification.permission === 'granted') {
-    new Notification('Gig Worker Finder', {
-      body: message,
-      icon: '/favicon.ico'
-    });
+  if ('Notification' in window && Notification.permission === 'granted') {
+    new Notification('Gig Worker Finder', { body: message });
+    playNotificationSound();
+  } else {
+    // Fallback: alert or in-app notification
+    // alert(message);
   }
+}
+
+// Play a sound for new messages
+function playNotificationSound() {
+  const audio = new Audio('https://cdn.pixabay.com/audio/2022/07/26/audio_124bfa1c82.mp3');
+  audio.play();
 }
 
 // Update conversations list
@@ -349,9 +355,19 @@ async function startConversationWithEmployer(employerId, jobId, jobTitle) {
 
     if (response.ok) {
       alert('✅ Message sent to employer! Check your messages.');
-      // Optionally open chat modal
       document.getElementById('chat-modal').style.display = 'block';
-      loadConversations();
+      await loadConversations();
+      let convo = conversations.find(c => c.otherUser._id === employerId);
+      if (!convo) {
+        // Wait and try again if not found
+        setTimeout(async () => {
+          await loadConversations();
+          convo = conversations.find(c => c.otherUser._id === employerId);
+          if (convo) selectConversation(convo);
+        }, 1000);
+      } else {
+        selectConversation(convo);
+      }
     } else {
       const data = await response.json();
       alert(`❌ ${data.message || 'Failed to send message'}`);
@@ -363,7 +379,7 @@ async function startConversationWithEmployer(employerId, jobId, jobTitle) {
 
 // Request notification permission
 function requestNotificationPermission() {
-  if ('Notification' in window && Notification.permission === 'default') {
+  if ('Notification' in window && Notification.permission !== 'granted') {
     Notification.requestPermission();
   }
 }
@@ -377,7 +393,7 @@ if (!token || !role) {
   window.location.href = "index.html";
 }
 
-if (role !== "employer" && role !== "worker") {
+if (role !== "employer" && role !== "worker" && role !== "admin") {
   console.log("❌ Invalid role detected:", role);
   localStorage.clear();
   window.location.href = "index.html";
@@ -401,6 +417,7 @@ document.getElementById("logoutBtn").addEventListener("click", () => {
 
 const employerView = document.getElementById("employerView");
 const workerView = document.getElementById("workerView");
+const adminView = document.getElementById("adminView");
 
 // Role-based view loading
 if (role === "employer") {
@@ -408,6 +425,7 @@ if (role === "employer") {
   employerView.style.display = "block";
   workerView.style.display = "none";
   loadMyJobs();
+  loadBookmarkedApplicants();
   
   document.getElementById("jobForm").addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -415,7 +433,8 @@ if (role === "employer") {
       title: document.getElementById("title").value,
       description: document.getElementById("description").value,
       location: document.getElementById("location").value,
-      payRate: document.getElementById("payRate").value
+      payRate: document.getElementById("payRate").value,
+      jobType: document.getElementById("jobType").value
     };
     
     try {
@@ -449,45 +468,63 @@ if (role === "worker") {
   workerView.style.display = "block";
   employerView.style.display = "none";
   loadJobs();
+  loadMyApplications();
   
   document.getElementById("filterBtn").addEventListener("click", loadJobs);
+  document.getElementById("showFavoritesBtn").addEventListener("click", toggleFavorites);
+}
+
+if (role === "admin") {
+  adminView.style.display = "block";
+  employerView.style.display = "none";
+  workerView.style.display = "none";
+  loadAllJobsForAdmin();
 }
 
 async function loadJobs() {
   const location = document.getElementById("filterLocation").value;
-  let url = `${apiUrl}/jobs`;
-  if (location) url += `?location=${location}`;
-  
+  const minPay = document.getElementById("filterMinPay").value;
+  const maxPay = document.getElementById("filterMaxPay").value;
+  const jobType = document.getElementById("filterJobType").value;
+  const keyword = document.getElementById("filterKeyword").value;
+  let url = `${apiUrl}/jobs?`;
+  if (location) url += `location=${encodeURIComponent(location)}&`;
+  if (minPay) url += `minPay=${encodeURIComponent(minPay)}&`;
+  if (maxPay) url += `maxPay=${encodeURIComponent(maxPay)}&`;
+  if (jobType) url += `jobType=${encodeURIComponent(jobType)}&`;
+  if (keyword) url += `keyword=${encodeURIComponent(keyword)}&`;
+
   try {
     const res = await fetch(url);
     const data = await res.json();
     const jobList = document.getElementById("jobList");
     jobList.innerHTML = "";
-    
+
     const jobs = data.jobs || data;
-    
+    const favorites = await getFavoriteJobIds();
+    const userId = getCurrentUserId();
+
     if (jobs && jobs.length > 0) {
-      // Get current user ID from token
-      const userId = getCurrentUserId();
-      
       jobs.forEach((job) => {
-        // Check if user has already applied to this job
         const hasApplied = job.applicants && job.applicants.some(
           applicantId => applicantId === userId || applicantId._id === userId
         );
-        
+        const isFavorite = favorites.includes(job._id);
         const applyButton = hasApplied 
           ? `<button disabled style="background-color: #28a745; color: white; margin-right: 10px;">Applied!</button>` 
           : `<button onclick="applyToJob('${job._id}')" style="margin-right: 10px;">Apply</button>`;
-        
+        const favoriteButton = isFavorite
+          ? `<button onclick="unfavoriteJob('${job._id}')" style="color: gold;">★ Unfavorite</button>`
+          : `<button onclick="favoriteJob('${job._id}')">☆ Favorite</button>`;
         const li = document.createElement("li");
         li.innerHTML = `
-          <strong>${job.title}</strong> — ${job.location} — Rs. ${job.payRate}
+          <strong>${job.title}</strong> — ${job.location} — Rs. ${job.payRate} — ${job.jobType || ''}
           <br/>
           <small>Posted by: ${job.employer?.name || 'Unknown'}</small>
           <br/>
           <div style="margin-top: 10px;">
             ${applyButton}
+            ${favoriteButton}
             <button onclick="startConversationWithEmployer('${job.employer?._id}', '${job._id}', '${job.title}')" class="chat-btn">💬 Message Employer</button>
           </div>
         `;
@@ -499,6 +536,89 @@ async function loadJobs() {
   } catch (err) {
     console.error("Error loading jobs:", err);
     alert("Error loading jobs");
+  }
+}
+
+async function getFavoriteJobIds() {
+  try {
+    const res = await fetch(`${apiUrl}/jobs/favorites`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const data = await res.json();
+    return (data.jobs || []).map(job => job._id);
+  } catch (err) {
+    return [];
+  }
+}
+
+window.favoriteJob = async function(jobId) {
+  try {
+    const res = await fetch(`${apiUrl}/jobs/${jobId}/favorite`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (res.ok) {
+      loadJobs();
+    } else {
+      alert('Failed to favorite job.');
+    }
+  } catch (err) {
+    alert('Failed to favorite job.');
+  }
+}
+
+window.unfavoriteJob = async function(jobId) {
+  try {
+    const res = await fetch(`${apiUrl}/jobs/${jobId}/favorite`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (res.ok) {
+      loadJobs();
+    } else {
+      alert('Failed to unfavorite job.');
+    }
+  } catch (err) {
+    alert('Failed to unfavorite job.');
+  }
+}
+
+async function loadFavoriteJobs() {
+  try {
+    const res = await fetch(`${apiUrl}/jobs/favorites`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const data = await res.json();
+    const favoriteJobsList = document.getElementById('favoriteJobsList');
+    favoriteJobsList.innerHTML = '';
+    const jobs = data.jobs || [];
+    if (jobs.length > 0) {
+      jobs.forEach(job => {
+        const li = document.createElement('li');
+        li.innerHTML = `
+          <strong>${job.title}</strong> — ${job.location} — Rs. ${job.payRate} — ${job.jobType || ''}
+          <br/>
+          <small>Posted by: ${job.employer?.name || 'Unknown'}</small>
+          <br/>
+          <button onclick="unfavoriteJob('${job._id}')">Remove from Favorites</button>
+        `;
+        favoriteJobsList.appendChild(li);
+      });
+    } else {
+      favoriteJobsList.innerHTML = '<li>No favorite jobs</li>';
+    }
+  } catch (err) {
+    alert('Failed to load favorite jobs.');
+  }
+}
+
+function toggleFavorites() {
+  const favoriteJobsList = document.getElementById('favoriteJobsList');
+  if (favoriteJobsList.style.display === 'none' || favoriteJobsList.style.display === '') {
+    loadFavoriteJobs();
+    favoriteJobsList.style.display = 'block';
+  } else {
+    favoriteJobsList.style.display = 'none';
   }
 }
 
@@ -635,42 +755,46 @@ window.deleteJob = deleteJob;
 
 async function viewApplicants(jobId, jobTitle) {
   const { token } = getStoredAuth();
-  
   try {
     const response = await fetch(`${apiUrl}/jobs/${jobId}/applicants`, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
-    
     const data = await response.json();
-    
+    // Fetch job to get bookmarkedApplicants
+    const jobRes = await fetch(`${apiUrl}/jobs/${jobId}`);
+    const jobData = await jobRes.json();
+    const bookmarked = (jobData.bookmarkedApplicants || []).map(id => id.toString());
     if (response.ok) {
       const applicantsJobTitle = document.getElementById('applicants-job-title');
       const applicantsList = document.getElementById('applicants-list');
       const applicantsSection = document.getElementById('applicants-section');
-
       applicantsJobTitle.textContent = jobTitle;
       applicantsList.innerHTML = '';
-      
       if (data.length > 0) {
-        data.forEach(applicant => {
+        for (const applicant of data) {
+          const isBookmarked = bookmarked.includes(applicant._id);
           const li = document.createElement('li');
           li.innerHTML = `
             <strong>${applicant.name}</strong><br>
             <em>Email:</em> ${applicant.email}<br>
-            <em>Role:</em> ${applicant.role}
+            <em>Role:</em> ${applicant.role}<br>
+            <em>Status:</em> <span id="status-${jobId}-${applicant._id}">${applicant.status}</span><br>
+            <button onclick="updateApplicationStatus('${jobId}','${applicant._id}','accepted')">Accept</button>
+            <button onclick="updateApplicationStatus('${jobId}','${applicant._id}','rejected')">Reject</button>
+            ${isBookmarked
+              ? `<button onclick="removeBookmark('${jobId}','${applicant._id}')">Remove Bookmark</button>`
+              : `<button onclick="bookmarkApplicant('${jobId}','${applicant._id}')">Bookmark</button>`}
           `;
           applicantsList.appendChild(li);
-        });
+        }
       } else {
         applicantsList.innerHTML = '<li>No applicants yet</li>';
       }
-      
       applicantsSection.style.display = 'block';
     } else {
       alert(data.message || 'Failed to load applicants');
     }
   } catch (error) {
-    console.error('View applicants error:', error);
     alert('Network error. Please try again.');
   }
 }
@@ -685,3 +809,171 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 });
+
+async function loadMyApplications() {
+  try {
+    const res = await fetch(`${apiUrl}/jobs/my-applications`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const data = await res.json();
+    const myApplicationsList = document.getElementById('myApplicationsList');
+    myApplicationsList.innerHTML = '';
+    const applications = data.applications || [];
+    if (applications.length > 0) {
+      applications.forEach(app => {
+        const li = document.createElement('li');
+        li.innerHTML = `
+          <strong>${app.title}</strong> — ${app.location} — Rs. ${app.payRate} — ${app.jobType || ''}<br/>
+          <em>Status:</em> ${app.status} <em>Applied At:</em> ${new Date(app.appliedAt).toLocaleString()}
+        `;
+        myApplicationsList.appendChild(li);
+      });
+    } else {
+      myApplicationsList.innerHTML = '<li>No applications yet</li>';
+    }
+  } catch (err) {
+    alert('Failed to load applications.');
+  }
+}
+
+if (role === "employer") {
+  // Add logic to load bookmarked applicants for all jobs
+  loadBookmarkedApplicants();
+}
+
+async function loadBookmarkedApplicants() {
+  try {
+    const res = await fetch(`${apiUrl}/jobs`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const data = await res.json();
+    const jobs = data.jobs || [];
+    const bookmarkedApplicantsList = document.getElementById('bookmarkedApplicantsList');
+    bookmarkedApplicantsList.innerHTML = '';
+    let hasBookmarks = false;
+    for (const job of jobs) {
+      const res2 = await fetch(`${apiUrl}/jobs/${job._id}/bookmarked-applicants`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data2 = await res2.json();
+      const applicants = data2.bookmarkedApplicants || [];
+      if (applicants.length > 0) {
+        hasBookmarks = true;
+        applicants.forEach(applicant => {
+          const li = document.createElement('li');
+          li.innerHTML = `
+            <strong>${applicant.name}</strong> (${applicant.email}) — ${applicant.role}<br/>
+            <em>Bookmarked for job:</em> ${job.title}
+          `;
+          bookmarkedApplicantsList.appendChild(li);
+        });
+      }
+    }
+    if (!hasBookmarks) {
+      bookmarkedApplicantsList.innerHTML = '<li>No bookmarked applicants</li>';
+    }
+  } catch (err) {
+    alert('Failed to load bookmarked applicants.');
+  }
+}
+
+window.updateApplicationStatus = async function(jobId, userId, status) {
+  try {
+    const res = await fetch(`${apiUrl}/jobs/${jobId}/applications/${userId}/status`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ status })
+    });
+    if (res.ok) {
+      document.getElementById(`status-${jobId}-${userId}`).textContent = status;
+      alert('Status updated!');
+    } else {
+      alert('Failed to update status.');
+    }
+  } catch (err) {
+    alert('Failed to update status.');
+  }
+}
+
+window.bookmarkApplicant = async function(jobId, userId) {
+  try {
+    const res = await fetch(`${apiUrl}/jobs/${jobId}/applications/${userId}/bookmark`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (res.ok) {
+      alert('Applicant bookmarked!');
+      loadBookmarkedApplicants();
+    } else {
+      const data = await res.json();
+      alert(data.message || 'Failed to bookmark applicant.');
+    }
+  } catch (err) {
+    alert('Failed to bookmark applicant.');
+  }
+}
+
+window.removeBookmark = async function(jobId, userId) {
+  try {
+    const res = await fetch(`${apiUrl}/jobs/${jobId}/applications/${userId}/bookmark`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (res.ok) {
+      alert('Bookmark removed!');
+      loadBookmarkedApplicants();
+    } else {
+      alert('Failed to remove bookmark.');
+    }
+  } catch (err) {
+    alert('Failed to remove bookmark.');
+  }
+}
+
+async function loadAllJobsForAdmin() {
+  try {
+    const res = await fetch(`${apiUrl}/jobs`);
+    const data = await res.json();
+    const jobs = data.jobs || [];
+    const allJobsList = document.getElementById("allJobsList");
+    allJobsList.innerHTML = "";
+    if (jobs.length > 0) {
+      jobs.forEach(job => {
+        const li = document.createElement("li");
+        li.innerHTML = `
+          <strong>${job.title}</strong> — ${job.location} — Rs. ${job.payRate} — ${job.jobType || ''}<br/>
+          <small>Posted by: ${job.employer?.name || 'Unknown'}</small>
+          <button onclick="deleteJobAsAdmin('${job._id}')">Delete</button>
+        `;
+        allJobsList.appendChild(li);
+      });
+    } else {
+      allJobsList.innerHTML = "<li>No jobs found</li>";
+    }
+  } catch (err) {
+    alert("Failed to load jobs for admin.");
+  }
+}
+
+window.deleteJobAsAdmin = async function(jobId) {
+  if (confirm("Are you sure you want to delete this job?")) {
+    try {
+      const res = await fetch(`${apiUrl}/jobs/${jobId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (res.ok) {
+        loadAllJobsForAdmin();
+      } else {
+        alert('Failed to delete job.');
+      }
+    } catch (err) {
+      alert('Failed to delete job.');
+    }
+  }
+}

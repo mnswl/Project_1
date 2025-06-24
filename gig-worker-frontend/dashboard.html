@@ -23,18 +23,47 @@
       <input type="text" id="description" placeholder="Job Description" required />
       <input type="text" id="location" placeholder="Location" required />
       <input type="number" id="payRate" placeholder="Pay Rate" required />
+      <select id="jobType" required>
+        <option value="">Select Job Type</option>
+        <option value="full-time">Full-time</option>
+        <option value="part-time">Part-time</option>
+        <option value="contract">Contract</option>
+      </select>
       <button type="submit">Post Job</button>
     </form>
 
     <h2>My Posted Jobs</h2>
     <ul id="postedJobs"></ul>
+
+    <h3>Bookmarked Applicants</h3>
+    <ul id="bookmarkedApplicantsList"></ul>
   </div>
 
   <div id="workerView" style="display: none;">
     <h2>Available Jobs</h2>
     <input type="text" id="filterLocation" placeholder="Filter by location" />
+    <input type="number" id="filterMinPay" placeholder="Min Pay" />
+    <input type="number" id="filterMaxPay" placeholder="Max Pay" />
+    <select id="filterJobType">
+      <option value="">All Types</option>
+      <option value="full-time">Full-time</option>
+      <option value="part-time">Part-time</option>
+      <option value="contract">Contract</option>
+    </select>
+    <input type="text" id="filterKeyword" placeholder="Keyword search" />
     <button id="filterBtn">Search</button>
+    <button id="showFavoritesBtn">Show Favorites</button>
     <ul id="jobList"></ul>
+    <h3>Favorite Jobs</h3>
+    <ul id="favoriteJobsList" style="display:none;"></ul>
+    <h3>My Applications</h3>
+    <ul id="myApplicationsList"></ul>
+  </div>
+
+  <div id="adminView" style="display: none;">
+    <h2>Admin Panel</h2>
+    <h3>All Jobs</h3>
+    <ul id="allJobsList"></ul>
   </div>
 
   <!-- Chat Modal -->

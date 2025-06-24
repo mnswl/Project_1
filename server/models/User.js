@@ -8,8 +8,10 @@ const userSchema = new mongoose.Schema({
   password: { type: String, required: true },
   role: { 
     type: String, 
-    enum: ['worker', 'employer'], 
+    enum: ['worker', 'employer', 'admin'],
     default: 'worker' },
+  favorites: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Job' }],
+  isBlocked: { type: Boolean, default: false }, // Admin can block/unblock users
 }, { timestamps: true });
 
 // Hash password before saving

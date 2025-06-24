@@ -100,9 +100,13 @@ registerForm.addEventListener('submit', async (e) => {
       registerForm.reset();
       
       // Auto-login after registration
-      setStoredAuth(data);
-      showUserSection(data.role, data.name);
-      loadJobs();
+      setStoredAuth({
+        token: data.token,
+        role: data.user.role,
+        name: data.user.name,
+        id: data.user.id
+      });
+      window.location.href = 'dashboard.html';
     } else {
       registerMsg.textContent = data.message || 'Registration failed';
       registerMsg.className = 'error';
@@ -117,28 +121,37 @@ registerForm.addEventListener('submit', async (e) => {
 // Login functionality
 loginForm.addEventListener('submit', async (e) => {
   e.preventDefault();
-  
   const email = document.getElementById('login-email').value;
   const password = document.getElementById('login-password').value;
-  
   try {
     const response = await fetch(`${API_BASE}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password })
     });
-    
-    const data = await response.json();
-    
+    const text = await response.text();
+    let data;
+    try { data = JSON.parse(text); } catch { data = { raw: text }; }
+    console.log('🔍 Login response status:', response.status);
+    console.log('🔍 Login response text:', text);
     if (response.ok) {
       loginMsg.textContent = 'Login successful!';
       loginMsg.className = 'message';
       loginForm.reset();
-      
-      // Store auth data and show dashboard
-      setStoredAuth(data);
-      showUserSection(data.role, data.name);
-      loadJobs();
+      // Support both response formats
+      const user = data.user || {
+        id: data.id || data._id,
+        name: data.name,
+        email: data.email,
+        role: data.role
+      };
+      setStoredAuth({
+        token: data.token,
+        role: user.role,
+        name: user.name,
+        id: user.id
+      });
+      window.location.href = 'dashboard.html';
     } else {
       loginMsg.textContent = data.message || 'Login failed';
       loginMsg.className = 'error';

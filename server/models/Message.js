@@ -26,6 +26,8 @@ const messageSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  isFlagged: { type: Boolean, default: false },
+  flaggedReason: { type: String, default: '' },
   createdAt: {
     type: Date,
     default: Date.now
