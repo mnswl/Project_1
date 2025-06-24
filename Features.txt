@@ -1,0 +1,8 @@
+View available jobs with filters (location, pay rate, job type)
+View applied jobs status
+Filter jobs by location, pay rate, job type
+Keyword search
+Employers can update application statuses (pending, accepted, rejected)
+Workers can view application status
+Workers can save favorite jobs
+Employers can bookmark applicants
